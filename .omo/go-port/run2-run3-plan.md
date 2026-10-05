@@ -1,0 +1,37 @@
+# Run 2 — go-port-runtime (stage on 2026-10-04T~01:25 WIB; start AFTER Run 1 verify-foundation PASSes)
+
+Purpose: the runtime port layer that Run 3 tool waves depend on. All nodes read gogram v1.7.71 source at /tmp/gogram-src/github.com/Amarnathcjd/gogram@v1.7.71 (re-download: curl -sL https://proxy.golang.org/github.com/!amarnathcjd/gogram/@v/v1.7.71.zip). Import path LOWERCASE: github.com/amarnathcjd/gogram{,/telegram}.
+
+Verified API facts to paste into node prompts (from source, do not re-guess):
+- NewMessage fields: full struct in telegram/types_gen.go; key: MessageID, Peer, Sender, Text, Entities []MessageEntity, Media *MessageMedia, Date, FwdFrom, ReplyTo, GroupedID.
+- MessageEntity: Type MessageEntityType (MessageEntityMention/Hashtag/TextUrl/Url/Code/Pre/Bold/Italic/Underline/Strikethrough/BlockQuote/Spoiler/CustomEmoji...), Offset, Length.
+- RichBuilder: RichBuilderNewText(...), .Bolds/Italics/Fonts/Codes/Underlines/Strikethroughs/Spoilers/InlineTexts, .Build() -> *RichMessage (EditRich/SendRich).
+- SendOptions full field list in telegram/messages.go L17-70: Entities, MimeType, Caption, ReplyTo *InputReplyToMessage, ReplyID, TopicID, Silent, ScheduleDate, TTL, Spoiler, Media any (InputMedia/MessageMedia/InputFile), ParseMode markdown|html.
+- NewMessage (telegram/newmessage.go): ID int32, Message *MessageObj, Sender *UserObj, SenderChat *Channel, Peer InputPeer, File *CustomFile, Chat *ChatObj, Channel *Channel, Action MessageAction; helpers MessageText(), .Message.Message/.Date/.ReplyTo/.GroupedID; NewMessage.Client holds the client.
+- Rich text = RichBuilder (telegram/formatting.go L687) consumed by (*Client).SendRich(peer, *RichBuilder, SendOptions...) / EditRich(peer, msgID, *RichBuilder, ...) -> *NewMessage. Leaf builders: RichPlain/RichBold/RichItalic/RichFixed/RichMarked/RichUnderline/RichStrike/RichEmpty (RichText nodes).
+- Resolution: (*Client).ResolvePeer(any) (InputPeer, error); ResolveUsername(username, ref ...string) (any, error); ResolveMedia/ResolveMultiMedia for uploads.
+- GetDialogs(Opts ...*DialogOptions) ([]TLDialog, error); TLDialog{Dialog Dialog, Peer Peer, TopMessage int32, PeerType int} with IsUser()/IsChat()/IsChannel()/GetID() helpers (users.go L132-170).
+- Contacts: ContactsAddContact(params *ContactsAddContactParams) / ContactsDeleteContacts([]InputUser) / ContactsSearch / ContactsGet in methods_gen.go — grep exact signatures when porting; NO (*Client).SearchMessages — search messages via GetMessages(&SearchOption{Query, FromUser, ...}).
+- Media: SendMedia(peer, media any, opts ...*MediaOptions); DownloadMedia(file any, Opts ...*DownloadOptions) (string /*tmp path*/, error); DownloadChunk(media, start, end, chunkSize); GetMediaGroup(PeerID, MsgID) album.
+- Forum: CreateTopic/EditorTopic/PinTopic/ReorderPinnedTopics/ViewForumAsMessages; GetForumTopics hand-rolled RPC exists in Python -> in Go use Objects.GetForumTopics or tl types if missing.
+- Admin: CreateChannel/LeaveChannel/EditAdmin(chat,user,AdminOptions)/EditBanned/GetChatInviteLink/ExportInvite/RevokeInvite; ChatAdminRights/ChatBannedRights bitmask structs in types_gen.go.
+- Reactions: SendReaction(peer, msgID, reaction any, big ...bool); GetAvailableReactions (AccountGetReactionsNotifySettings too).
+- Polls: SendPoll(peer, question, []string options, PollOptions: Multiple, Quiz, CloseDate, PollInputOption...).
+- Contacts: ContactsSearch/ContactsGet/ContactsAdd/ContactsDelete (grep types_gen.go + users.go when porting).
+- Dialogs: GetDialogs(Opts ...*DialogOptions) ([]TLDialog, error); TLDialog struct in types_gen.go (Peer, Title, ParticipantCount, UnreadCount, LastMessage, IsForum, IsChannel, IsGroup, IsUser).
+- Entities resolution: gogram caches internally; kit.resolve_entity wraps (*Client).ResolvePeer / ResolveUsername by id-or-username.
+- NOTE (correction): no raw Invoke RPC exported at top level in v1.7.71 — hand-rolled requests (GetForumTopicsRequest in Python chats.py) map to typed generated methods in methods_gen.go; grep 'func (c *Client) <Method>' first and fall back to internal tl types only if truly missing.
+
+Nodes (all category quick unless noted; dependsOn scaffold-set from Run 1):
+1. rich (unspecified-high): internal/kit/rich.go + tests. Port make_rich_input (runtime.py): markdown->entities, html->entities, plain fallback, custom-emoji, blockquote/spoiler/mention/hashtag/inline-bot-link. Use RichBuilder or build []MessageEntity manually; expose BuildRich(text, mode) -> {Message any; Entities []MessageEntity; Plain string}.
+2. aliases (quick): port TELEGRAM_ALIASES_FILE (JSON/YAML? check runtime.py), TELEGRAM_CONTACT_FUZZY matching -> kit.Aliases; used by resolve_entity. Tests with temp alias file.
+3. contactsheet+photosource (quick): port telegram_mcp/contact_sheet.py (Pillow grid -> Go image/draw + golang.org/x/image? NO — use stdlib image/png + image/draw, no new dep beyond x/sys) and photo_source.py (avatar/media source resolution: GetPeerPhoto/PhotoID logic). Put under internal/kit/photo.go, internal/kit/contactsheet.go.
+4. transcription (unspecified-high): port telegram_mcp/transcription.py -> internal/kit/transcribe.go: engines groq (default; GROQ_API_KEY), telegram (native voice note .oga download + Telegram-side transcription via SendReaction? check Python: it uses getVoice note + local or native pipeline), openai (OPENAI_API_KEY, whisper-1), whisper (documented GAP: local faster-whisper is Python-only; map engine "whisper" to an OPENAI-compatible endpoint via WHISPER_BASE_URL/WHISPER_MODEL/WHISPER_DEVICE config — document in AGENTS.md as known exception). SQLite cache in TELEGRAM_TRANSCRIPT_CACHE_DIR; MAX_VOICES/MAX_SECONDS batch budget; return {Text, Source}. Offline tests with fake HTTP + temp sqlite.
+5. clientidentity (quick): port telegram_mcp/client_identity.py -> internal/session/device.go (DeviceConfig from TELEGRAM_DEVICE_MODEL/SYSTEM_VERSION/APP_VERSION; default strings per Python).
+6. events feed (quick): port events.py behavior at kit level? NO — events is a tool domain (Run 3). Skip here; only if updates handler needed: none.
+7. verify-runtime (quick): go build/vet/test ./... + grep that each of rich/aliases/photosource/transcribe/device symbols exists; FAIL lines -> retry owning node.
+
+Run 3 — tool waves (start after verify-runtime PASS; 9 parallel quick nodes, disjoint packages, each + offline tests + parity check against inventory.json for its module):
+- messages (34 tools, unspecified-high), groups (25, unspecified-high), chats (19, unspecified-high), contacts (17, unspecified-high), media (13, unspecified-high), profile (11, quick), folders (7, quick), events (5, quick), accounts (1, quick).
+- Each node prompt template: "Port telegram_mcp/tools/<mod>.py tools into internal/tools/<mod>/package.go registering via mcpserver.RegisterTool; tool NAMES MUST match .omo/go-port/parity/inventory.json entries for module <mod> exactly; input schema fields mirror Python signature (ctx/account excluded — Go uses kit ctx); annotations: readonly per inventory.json readonly flags; body: kit helpers + gogram client via kit.Client(); NEVER raise — return formatted string (mirror log_and_format_error); port the Python docstrings' Args into JSON schema descriptions. VERIFY: module test file asserts each of the N tool names registers; go build ./... green; no gogram import outside kit (tools import internal/kit only)."
+- Then run4-cutover + run5-release as planned in goal.

@@ -1,11 +1,12 @@
-version: '3.8'
-
 services:
   telegram-mcp:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
+      args:
+        VERSION: ${VERSION:-dev}
+    image: telegram-mcp-go
     container_name: telegram-mcp
     # Load environment variables from a .env file in the same directory
     env_file:
@@ -19,18 +20,19 @@ services:
     # The endpoint is unauthenticated — publish on localhost only.
     ports:
       - "127.0.0.1:8765:8765"
-    # Optional: Uncomment the following lines to mount a local directory
-    # for persisting the Telegram session file if NOT using TELEGRAM_SESSION_STRING.
-    # Replace './telegram_sessions' with your desired host path.
-    # volumes:
-    #   - ./telegram_sessions:/app
     volumes:
-      # Voice/video-note transcript cache (SQLite, see telegram_mcp/transcription.py).
-      # Without this mount the cache lives only in the container's writable
-      # layer and is lost on every `docker compose build`. It holds plaintext
-      # personal-chat transcripts, so this directory should get its own
-      # backup/retention policy rather than riding along with a general backup.
-      # Host directory must be readable/writable by uid 1000 (appuser):
-      #   mkdir -p ./transcript_cache && chown 1000:1000 ./transcript_cache
+      # Voice/video-note transcript cache (SQLite, see
+      # internal/config TELEGRAM_TRANSCRIPT_CACHE_DIR). Without this mount the
+      # cache lives only in the container's writable layer and is lost on every
+      # `docker compose build`. It holds plaintext personal-chat transcripts, so
+      # this directory should get its own backup/retention policy rather than
+      # riding along with a general backup.
+      # Host directory must be readable/writable by the distroless nonroot
+      # uid/gid (65532):
+      #   mkdir -p ./transcript_cache && chown 65532:65532 ./transcript_cache
       - ./transcript_cache:/app/data/transcripts
+      # Session state (SQLite session files). Uncomment when not supplying
+      # TELEGRAM_SESSION_STRING via .env, otherwise the container logs in fresh
+      # on every start:
+      # - ./telegram_sessions:/app/telegram_sessions
     restart: unless-stopped

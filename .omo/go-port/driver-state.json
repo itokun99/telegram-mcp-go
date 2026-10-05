@@ -1,0 +1,8 @@
+{
+ "phase": "fix-run1",
+ "run1": "dag_bde10141-e3f1-4413-8bd0-2c2dbbad9ad4",
+ "initializedAt": 1791169296236,
+ "quotaResetAt": 1791182768732,
+ "quotaEvidence": "429 quota_limit: 2201/2200 weekly; resetsIn 1h53m (adacode/claude-opus-4-6)",
+ "note": "quota wall; backoff 118m; heartbeat killed; wake scheduled at reset"
+}

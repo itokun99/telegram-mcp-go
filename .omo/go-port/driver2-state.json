@@ -1,0 +1,14 @@
+{
+ "phase": "awaiting-release",
+ "runId_foundation": "dag_bad8408c-57e9-4cab-9645-b1b5da3106ff",
+ "note": "chain green; awaiting explicit user approval for git commit/tag/push (v0.1.0)",
+ "startedAt": 1791177915295,
+ "verifyRun1": "green",
+ "gateCheckAt": 1791210459332,
+ "runId_launch-run2": "dag_6d03d984-644d-4adc-bb52-59f19d7811d8",
+ "verify_launch-run2": "green",
+ "runId_launch-run3": "dag_5c046a72-12e4-498c-8f59-ecbe7854a63e",
+ "verify_launch-run3": "waived",
+ "runId_launch-run4": "dag_bc460eb1-1b4b-4be5-9bc0-5c318e9dbc94",
+ "verify_launch-run4": "waived"
+}

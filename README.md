@@ -4,893 +4,609 @@
 
 ![MCP Badge](https://badge.mcpx.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Python Lint & Format Check](https://github.com/chigwell/telegram-mcp/actions/workflows/python-lint-format.yml/badge.svg)](https://github.com/chigwell/telegram-mcp/actions/workflows/python-lint-format.yml)
-[![Docker Build & Compose Validation](https://github.com/chigwell/telegram-mcp/actions/workflows/docker-build.yml/badge.svg)](https://github.com/chigwell/telegram-mcp/actions/workflows/docker-build.yml)
+![Go](https://img.shields.io/badge/go-1.27-00ADD8?style=flat-square)
+![Tools](https://img.shields.io/badge/MCP%20tools-132-00ADD8?style=flat-square)
 
-A Telegram integration for Claude, Cursor, and other MCP-compatible clients. It exposes Telegram account, chat, message, contact, media, folder, and admin operations through the [Model Context Protocol](https://modelcontextprotocol.io/) using [Telethon](https://docs.telethon.dev/).
+A Telegram integration for Claude, Cursor, Codex, and every other MCP-compatible client. It exposes Telegram account, chat, message, contact, media, folder, and admin operations over the [Model Context Protocol](https://modelcontextprotocol.io/) as a single static Go binary — **132 tools**, built on [gogram](https://github.com/Amarnathcjd/gogram) (MTProto) and the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk).
 
-## 🤖 MCP in Action
-
-Basic Telegram MCP usage in Claude:
-
-![Telegram MCP in action](screenshots/1.png)
-
-Asking Claude to analyze chat history and send a response:
-
-![Telegram MCP Request](screenshots/2.png)
-
-Message sent successfully:
-
-![Telegram MCP Result](screenshots/3.png)
+No runtime interpreter, no virtualenv, no dependency resolution at start-up: one binary, one `.env`, one Telegram session.
 
 ## Contents
 
-- [Skills & Practical Workflows](skills/README.md)
 - [What It Can Do](#what-it-can-do)
 - [Requirements](#requirements)
+- [Install](#install)
 - [Quick Start](#quick-start)
+- [CLI](#cli)
 - [MCP Client Configuration](#mcp-client-configuration)
+- [Transports](#transports)
 - [Multi-Account Setup](#multi-account-setup)
 - [Device Identity](#device-identity)
 - [Expected Account Check](#expected-account-check)
 - [Proxy Support](#proxy-support)
 - [File Path Security](#file-path-security)
 - [Chat Access Privacy (Allowlist)](#chat-access-privacy-allowlist)
+- [Voice Transcription](#voice-transcription)
+- [Event Feed](#event-feed)
 - [Docker](#docker)
+- [Environment Variables](#environment-variables)
+- [Known Gaps](#known-gaps)
 - [Development](#development)
 - [Security Notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
-## Skills & Workflows
-
-Looking for ready-to-use workflows, prompt examples, or integration recipes?
-Explore the [**Skills Documentation**](skills/README.md) for step-by-step guides on:
-- [Summarizing unread messages safely](skills/examples/summarize-latest-unread.md)
-- [Drafting replies without sending](skills/examples/draft-replies-without-sending.md)
-- [Triaging action items & urgent requests](skills/examples/triage-and-action-items.md)
-- [Searching chat history and expanding context](skills/examples/search-chat-and-summarize-context.md)
-
 ## What It Can Do
 
-The server currently includes 80+ MCP tools grouped into these areas:
+132 tools across nine domains. Every tool body is a formatted-string return, never a crash: failures come back as readable text plus an error code, and every call is bounded by `TELEGRAM_TOOL_TIMEOUT_SECONDS`.
 
-- **Accounts:** list configured accounts and route tool calls by account label.
-- **Chats and groups:** list chats, inspect metadata, create groups/channels, join or leave chats, invite or remove users, manage admins, bans, default permissions, slow mode, topics, invite links, common chats, read receipts, and message links.
-- **Messages:** send, schedule, edit, delete, forward, pin, unpin, mark read, reply, search, inspect context, create polls, manage reactions, inspect inline buttons, and press inline callbacks. `send_message`, `reply_to_message`, and `edit_message` support classic formatting (`parse_mode='md'`/`'html'`) and server-side rich formatting (`parse_mode='rich'`/`'rich_markdown'`/`'rich_html'` — full Markdown/HTML with tables, headings, formulas, and collapsible sections). Rich modes require Telegram Premium on the account; Premium is re-checked on every call, and without it nothing is sent — the tool returns a structured `telegram_premium_required` result so the agent can reformat with classic modes and retry. `send_message`, `reply_to_message`, and `edit_message` also accept `format_date` to render a date as a tappable chip.
+| Domain | Tools | What it covers |
+|---|---|---|
+| Messages | 34 | send, reply, edit, delete, forward, pin, schedule, polls, reactions, search, context inspection, inline-button inspection and callback presses, rich formatting |
+| Groups | 25 | create groups/channels, join/leave, invite/remove members, admins, bans, default permissions, slow mode, forum topics, invite links, member admin status |
+| Chats | 19 | list chats, metadata, archive, pin, read receipts, common chats, direct-chat lookup, `t.me` links |
+| Contacts | 17 | list, search, add, delete, block/unblock, contact aliases, fuzzy name matching, contact sheet |
+| Media | 13 | download/send photos, documents, video, voice notes; contact sheets; path-gated file access |
+| Profile | 11 | own profile, name/about/bio updates, profile photo, privacy settings |
+| Folders | 7 | list, create, rename, delete, add/remove chats |
+| Events | 5 | incoming-message event feed for callback-style clients |
+| Accounts | 1 | `list_accounts`, plus per-call routing by account label |
 
-`get_message_reactions` returns an empty list for a message with no reactions. To reuse a custom reaction, pass the returned `custom:<document_id>` value to `send_reaction`.
-- **Contacts:** list, search, add, delete, block, unblock, import, export, inspect direct chats, find recent contact interactions, and remember contacts by the names you actually use (see below).
+55 of the 132 tools are read-only; `TELEGRAM_EXPOSED_TOOLS=read-only` prunes the other 77 from the surface (see [Known Gaps](#known-gaps) for the current cutover status).
 
-### Remembered contacts
+### Rich formatting
 
-`set_contact_alias` teaches the server what you call someone, and every tool that takes a `chat_id` understands it from then on — `send_message("андрей бекендер", ...)` just works. A contact can carry any number of aliases, which is how tags work: save both `андрей бекендер` and `бекендер` for the same person and either resolves.
+`send_message`, `reply_to_message`, and `edit_message` accept `parse_mode=md` / `html` (classic Telegram markup) and `parse_mode=rich` / `rich_markdown` / `rich_html`, which allow full Markdown and HTML — tables, headings, formulas, collapsible sections. Rich modes require Telegram Premium on the sending account; Premium is re-checked on every call and, without it, nothing is sent and the tool returns a structured `telegram_premium_required` result so the agent can reformat with a classic mode and retry.
 
-**Only an exact saved wording ever sends.** Similar wording (`Андрею бекендеру` for a saved `андрей бекендер`) is matched too, but only to *suggest*: the tool sends nothing and asks you to confirm the contact by name. This is deliberate — `Лена`/`Леня` and `Иван`/`Иванов` differ exactly as much as a case ending does, so a matcher confident enough to handle declensions is also confident enough to message the wrong person whenever the one you meant is not saved yet. Confirming saves that wording as its own alias, so each new phrasing costs one yes/no the first time and nothing ever again. Set `TELEGRAM_CONTACT_FUZZY=0` to drop the suggestions too.
+### Prompt-injection sanitization
 
-When a reference is unknown, resembles one contact, matches several, or points at a contact that no longer resolves, tools send nothing and return a structured instruction telling the agent exactly what to ask you, to save the answer with `set_contact_alias`, and to retry once. `list_contact_aliases` shows one row per person with all their aliases (use it to spot a wrong memory), `delete_contact_alias` forgets one, and repointing an alias at someone else requires `replace=True`. The save path itself refuses a target it would have to guess at: contacts are saved by @username, phone, numeric ID, or an alias already confirmed for them.
-
-Aliases live in `${XDG_STATE_HOME:-~/.local/state}/telegram-mcp/aliases.json` (owner-only, written atomically); `TELEGRAM_ALIASES_FILE` overrides the path, and a pre-existing `aliases.json` next to the code is still read as a fallback.
-- **Media:** send files, download media, upload files, send voice notes, stickers, GIFs, inspect message media, and transcribe voice messages/video notes (see below).
-
-### Voice transcription
-
-`transcribe_voice(chat_id, message_id, engine=None)` turns a voice message or video note into text. Four engines are available:
-
-- `groq` (default): uploads the recording to Groq's hosted `whisper-large-v3-turbo`. Leaves the server and costs a download+upload per call, but doesn't drop the recording's last few words the way native transcription does. Requires `GROQ_API_KEY`. Groq caps the size of a single upload, so a recording above `TELEGRAM_TRANSCRIBE_GROQ_MAX_MB` (default 25, the free-tier limit) is refused locally with a `too_large` error naming its size instead of being downloaded and rejected by the API. Raise the limit if your Groq tier allows bigger files, or transcribe that message with `engine='telegram'`, which has no such cap.
-- `telegram`: native Telegram Premium transcription (`messages.TranscribeAudioRequest`). Free and never leaves Telegram, but empirically drops the last speech segment in roughly 2 of 3 recordings and requires Telegram Premium on the account. Long recordings come back `pending` and are polled automatically.
-- `openai`: any OpenAI-compatible `/audio/transcriptions` endpoint — OpenAI itself, a self-hosted [Parakeet](https://github.com/achetronic/parakeet) or [speaches](https://github.com/speaches-ai/speaches) server, LocalAI, a vLLM Whisper deployment, and so on. Set `TELEGRAM_TRANSCRIBE_OPENAI_URL` to the API base URL (e.g. `https://api.openai.com/v1`; a full `.../audio/transcriptions` URL also works), `TELEGRAM_TRANSCRIBE_OPENAI_API_KEY` for the bearer token (optional for keyless local servers), and `TELEGRAM_TRANSCRIBE_OPENAI_MODEL` (default `whisper-1`). Size cap: `TELEGRAM_TRANSCRIBE_OPENAI_MAX_MB` (default 25). For Parakeet use `TELEGRAM_TRANSCRIBE_OPENAI_URL=http://localhost:5092/v1`, the API key only if the server sets `PARAKEET_API_KEY`, and set `TELEGRAM_TRANSCRIBE_LANGUAGE` for anything that isn't English — Parakeet assumes `en` when no language is sent.
-- `whisper`: a local [faster-whisper](https://github.com/SYSTRAN/faster-whisper) model loaded inside the MCP server process. The audio never leaves the machine. Install the extra with `pip install 'telegram-mcp[whisper]'` (or `uv sync --extra whisper`). `TELEGRAM_TRANSCRIBE_WHISPER_MODEL` picks the model (default `small`; e.g. `large-v3-turbo` for better quality), `TELEGRAM_TRANSCRIBE_WHISPER_DEVICE` (`auto`/`cpu`/`cuda`), `TELEGRAM_TRANSCRIBE_WHISPER_COMPUTE_TYPE` (e.g. `int8` on CPU) and `TELEGRAM_TRANSCRIBE_WHISPER_MODEL_DIR` (where models are downloaded) tune it. The model is loaded once on first use and recordings are transcribed one at a time. Not available in the Alpine Docker image; use `openai` against a Parakeet or other OpenAI-compatible server next to the container instead.
-
-`TELEGRAM_TRANSCRIBE_LANGUAGE` (ISO-639-1, e.g. `nl`) is passed as a language hint to every engine except `telegram`; unset, the engines auto-detect. `TELEGRAM_TRANSCRIBE_TIMEOUT` (default 120 seconds) bounds a single request to the HTTP engines (`groq`, `openai`).
-
-The engine is chosen per call via the `engine` argument, or otherwise defaults to `TELEGRAM_TRANSCRIBE_ENGINE` (`groq`, `telegram`, `openai` or `whisper`). Results are cached by `(chat_id, message_id, engine)` in a local SQLite file so repeat reads and repeat listings never re-transcribe the same message. Concurrent requests for the same uncached recording are collapsed too: the second one waits for the first and returns its transcript, so a burst of callers costs one paid call, not one per caller. Every transcript is returned with a `note` marking it as a machine transcript, not a verbatim quote — treat it as a paraphrase, not exact wording.
-
-`get_history`, `get_messages`, `list_messages`, `search_messages`, `search_global`, and `get_message_context` fill in already-cached transcripts for voice messages instead of leaving the text empty, controlled by `TELEGRAM_TRANSCRIBE`:
-
-- `off`: transcription is disabled at runtime. The `transcribe_voice` tool stays registered and returns `{"transcribed": false, "reason": "transcription_disabled"}` instead of transcribing, and listings never show transcripts. Use `TELEGRAM_EXPOSED_TOOLS` to hide the tool itself.
-- `on-demand` (default): listings show cached transcripts but never spend an API call fetching a new one.
-- `auto`: `get_history`, `get_messages`, `list_messages`, and `search_messages` also prefetch missing transcripts, bounded per call by `TELEGRAM_TRANSCRIBE_MAX_VOICES`/`TELEGRAM_TRANSCRIBE_MAX_SECONDS` (Groq isn't free, so this prefetch is budgeted rather than unbounded).
-
-The cache lives in `TELEGRAM_TRANSCRIPT_CACHE_DIR` (default `data/transcripts`), written as a 700 directory / 600 file since it holds personal-chat text in plaintext — see [Docker](#docker) for why this needs its own volume mount in a container.
-- **Profile and privacy:** get your own account info, update profile fields, set or delete profile photos, inspect privacy settings, get user info/photos/status, and manage bot commands.
-- **Folders and drafts:** list, create, update, reorder, and delete Telegram folders; save, list, and clear drafts.
-- **Events:** wait for incoming messages with debounce (`wait_for_new_message`, `wait_for_settled_message`), optionally for one chat only via `chat_id` — without it any unrelated conversation wakes the wait — or enable the opt-in incoming event feed for callback-style delivery (see below).
-
-All tool results that include Telegram user-controlled content are sanitized and, where practical, returned as structured JSON.
-
-### Reusing custom emoji
-
-`get_history`, `list_messages`, `search_messages`, `search_global`,
-`get_message_context` (including `replied_message`), `get_pinned_messages`, and
-`get_drafts` include `custom_emojis` when the message contains custom emoji.
-`get_messages` and `get_scheduled_messages` include the same metadata as a JSON
-list in their text output. Ordinary messages keep their existing output.
-
-```json
-{"text": "🍷 News", "custom_emojis": [{"emoji": "🍷", "id": "5368324170671202286"}]}
-```
-
-Each entry contains the fallback emoji and its Telegram document ID as a string.
-Repeated IDs appear once per message; different IDs remain separate even when
-their fallback emoji looks identical. This is a list of reusable emoji variants,
-not a map of their positions or a copy of all message formatting. Extraction uses
-the original Telegram entities, including `TextCustomEmoji` nodes in block-format
-`rich_message` content, and makes no additional API requests. Emoji
-joiners and flag tag characters are preserved in the fallback text.
-
-To reuse an entry, set `parse_mode="html"` in `send_message`, `reply_to_message`,
-or `edit_message`, and insert `<tg-emoji emoji-id="ID">EMOJI</tg-emoji>` using its
-`id` and `emoji`. HTML-escape the fallback and other literal text. For example,
-the entry above becomes `<tg-emoji emoji-id="5368324170671202286">🍷</tg-emoji>`.
-Telegram's account restrictions still apply to sending custom emoji.
-
-### Tappable dates and times
-
-Passing `format_date` to `send_message`, `reply_to_message`, or `edit_message`
-renders a tappable date/time chip — the same entity Telegram's apps attach when
-you type a recognizable date. Give the date text exactly as it appears in the
-message: `'13/09'`, `'13/09/2026'`, or `'13/09 17:00'`. The chip opens
-copy-date / add-to-calendar / reminder actions. Plain-text messages only —
-omit `parse_mode`. For example, `send_message(chat_id, "Lunch 13/09 13:00",
-format_date="13/09 13:00")` sends a message whose date opens that menu.
-
-### Incoming Event Feed (callback mode, Claude Code only)
-
-By default, an agent waits for replies by calling `wait_for_settled_message`, which blocks up to the MCP tool timeout and must be re-called — that works everywhere (Codex, Cursor, etc.) and is unchanged.
-
-Clients that can wake an agent on external output (Claude Code's persistent `Monitor` on `tail -f`) can switch to callback mode instead:
-
-1. The agent calls `enable_incoming_feed` (or set `TELEGRAM_EVENT_FEED=1` in the environment to auto-enable). Each settled incoming burst is appended as one JSON line to `${XDG_STATE_HOME:-~/.local/state}/telegram-mcp/incoming_feed.jsonl`, created owner-only (0600). Override the path with `TELEGRAM_EVENT_FEED_FILE` — an explicit path's directory must already exist. `incoming_feed_status` reports the effective path and a ready-to-use watch command.
-2. The agent arms a persistent Monitor with the `watch_command` returned by the tool. Every new line re-invokes the agent with the burst summary; no blocking tool call is held open, and the chat stays free.
-
-`disable_incoming_feed` switches back; `incoming_feed_status` reports the current mode. While the feed is enabled it consumes settled bursts, so don't combine it with `wait_for_settled_message`. Feed lines contain user-generated `name` fields — treat them as untrusted data.
+Every piece of Telegram-sourced text that reaches a tool result passes through the sanitizer in `internal/kit` first (`SanitizeUserContent`, `SanitizeName`, `SanitizeDict`): control characters, zero-width joiners and bidi overrides are stripped, and lengths are clamped. Message bodies, contact names, button labels and chat names are all covered.
 
 ## Requirements
 
-- Python 3.10+
-- Telegram API credentials from [my.telegram.org/apps](https://my.telegram.org/apps)
-- A Telegram session string or file-based session
-- An MCP client such as Claude Desktop, Cursor, or another MCP-compatible host
-- Optional: [uv](https://docs.astral.sh/uv/) for local development
+- Go 1.27+ (to build from source), or Docker.
+- Telegram `api_id` and `api_hash` from <https://my.telegram.org/apps>.
+- An authenticated session: either a portable session string or a session file (see [CLI](#cli)).
+
+## Install
+
+### With Go
+
+```bash
+go install github.com/itokun99/telegram-mcp-go/cmd/telegram-mcp-go@latest
+```
+
+The binary lands in `$(go env GOPATH)/bin/telegram-mcp-go`.
+
+### With Homebrew
+
+```bash
+brew install itokun99/telegram-mcp-go/tap/telegram-mcp-go
+```
+
+The tap is published alongside the tagged release; until it exists, use `go install` above.
+
+### From source
+
+```bash
+git clone https://github.com/itokun99/telegram-mcp-go.git
+cd telegram-mcp-go
+go build -trimpath -o telegram-mcp-go ./cmd/telegram-mcp-go
+```
 
 ## Quick Start
 
-> Do not install this server with `uvx telegram-mcp`, `uvx --from telegram-mcp`,
-> or `pip install telegram-mcp`. The `telegram-mcp` name on PyPI is currently
-> owned by a different project and does not install this repository. Passing
-> `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, or `TELEGRAM_SESSION_STRING` to that
-> package can expose Telegram account credentials to unrelated third-party code.
+### 1. Get API credentials
 
-### 1. Clone and Install
+Create an application at <https://my.telegram.org/apps> and copy `api_id` (a number) and `api_hash` (a string).
+
+### 2. Write `.env`
 
 ```bash
-git clone https://github.com/chigwell/telegram-mcp.git
-cd telegram-mcp
-uv sync
+TELEGRAM_API_ID=123456
+TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
 ```
 
-### 2. Generate a Session String
+Full variable reference: [Environment Variables](#environment-variables). `.env` is read once at start-up; every value can also be supplied as a real environment variable, which wins over the file in most launchers.
+
+### 3. Create a session
+
+Interactive login runs as a local CLI, never inside the server process:
 
 ```bash
-uv run session_string_generator.py
+telegram-mcp-go gen-session
 ```
 
-Follow the prompts. Save the generated session string securely. A session
-string is convenient for initial setup and portable deployments; for a
-long-running server, migrate it to a persistent file session after configuring
-your environment (see below).
-
-For scripted setup or operational runbooks, choose the login method explicitly:
+It prints a portable session string. Put it in `.env`:
 
 ```bash
-# QR login, recommended when you already have Telegram open on another device
-uv run session_string_generator.py --qr
-
-# Phone number + verification code login
-uv run session_string_generator.py --phone
+TELEGRAM_SESSION_STRING=<printed session string>
 ```
 
-Without a flag, the generator keeps the interactive method prompt.
-
-### 3. Configure Environment
-
-Copy the example file and fill in your real values:
+Already have a session string from the pre-Go implementation? Convert it instead of logging in again:
 
 ```bash
-cp .env.example .env
+telegram-mcp-go migrate-session --in "<old session string>" --out ./migrate
 ```
 
-Single-account setup:
-
-```env
-TELEGRAM_API_ID=your_api_id_here
-TELEGRAM_API_HASH=your_api_hash_here
-TELEGRAM_SESSION_STRING=your_session_string_here
-```
-
-### Recommended: Persistent Session for Long-Running Servers
-
-`StringSession` stores the Telegram authorization key, but not Telethon's update
-state. After a restart, a busy account can therefore receive a large backlog of
-updates. A local SQLite session persists the update cursor and entity cache, so
-subsequent reconnects receive only the missed delta.
-
-Stop all running telegram-mcp processes, then migrate the string configured in
-`.env`:
+### 4. Run the server
 
 ```bash
-uv run telegram-mcp-migrate-session
+telegram-mcp-go              # stdio transport, the default
+MCP_TRANSPORT=http telegram-mcp-go   # streamable HTTP on 127.0.0.1:8765
 ```
 
-The command verifies the new session with Telegram and prints the exact setting
-to use. Update `.env` as instructed, for example:
-
-```env
-# Remove or comment this out; it takes precedence when both are present.
-# TELEGRAM_SESSION_STRING=your_session_string_here
-TELEGRAM_SESSION_NAME=/absolute/path/to/telegram_mcp_session
-```
-
-The resulting `.session` file contains account credentials. Keep it private and
-do not commit it. The repository's `.gitignore` already excludes session files.
-
-For a labeled account, use `--account` with the same label:
+Check the served surface without touching Telegram:
 
 ```bash
-uv run telegram-mcp-migrate-session --account work
+telegram-mcp-go --dry-run    # sorted JSON tool list, exit 0
 ```
 
-This reads `TELEGRAM_SESSION_STRING_WORK` and writes the corresponding
-`TELEGRAM_SESSION_NAME_WORK` instruction. Use `--target PATH` to choose another
-destination. Do not run the migration while another process is using the source
-session.
+### 5. Point an MCP client at it
 
-By default, all Telegram MCP tools are exposed. If you want to prevent MCP
-clients from sending messages or performing chat/account mutations, set
-`TELEGRAM_EXPOSED_TOOLS=read-only` to expose only tools annotated with
-`readOnlyHint=True`:
+See [MCP Client Configuration](#mcp-client-configuration).
 
-```env
-TELEGRAM_EXPOSED_TOOLS=read-only
+## CLI
+
+One binary, three modes.
+
+### `telegram-mcp-go` — the server
+
+```
+telegram-mcp-go [-dry-run]
 ```
 
-If read-only is too strict but `all` is too broad, append `+` and a
-comma-separated list of tool names to also expose those specific write tools.
-Every other write tool stays unregistered:
+| Flag | Effect |
+|---|---|
+| `-dry-run` | Print the served tool list as sorted JSON and exit 0. No Telegram connection, no transport, no credentials needed beyond a parseable config. |
 
-```env
-TELEGRAM_EXPOSED_TOOLS=read-only+send_message,reply_to_message,send_file
+Everything else is configured through the environment: `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PORT`, `TELEGRAM_EXPOSED_TOOLS`, `TELEGRAM_TOOL_TIMEOUT_SECONDS`. The server exits non-zero with a single-line message on stderr when the configuration is invalid (see [fail-loud](#fail-loud-vs-default) below) and `0` on a clean SIGINT/SIGTERM shutdown.
+
+### `telegram-mcp-go gen-session` — create a session string
+
+```
+telegram-mcp-go gen-session
 ```
 
-An unknown name in the allowlist aborts startup, so a typo cannot silently
-degrade into a narrower surface that looks like it worked.
+Drives gogram's phone/code login flow and prints the resulting portable session string. It reads `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from the environment, requires a terminal (it refuses to run without a TTY, because the interactive flow must never share a process with an MCP transport), and writes nothing to disk — pipe the output into your `.env`.
 
-At startup the server prints the names of the tools the mode hides to stderr;
-those are the names the `+` list accepts.
+### `telegram-mcp-go migrate-session` — convert a legacy session string
 
-This is an MCP tool-surface restriction, not a Telegram session sandbox or
-reduced Telegram account permission. The Telegram session string still has its
-normal authority inside the server process; read-only mode only prevents
-non-read-only tools from being registered and exposed through MCP. Accepted
-values are `all` (the default), `read-only`, and `read-only+<tool>,<tool>`.
-
-A separate, hardcoded allowlist restricts `send_voice`, `send_sticker`,
-`set_profile_photo`, and `edit_chat_photo` to their expected file extensions;
-`send_file` and `upload_file` accept any extension by default. Use
-`TELEGRAM_FILE_EXTENSIONS` to add allowlists for those two, or to tighten or
-replace any of the hardcoded ones, in the same `tool:.ext,.ext` shape as
-`TELEGRAM_EXPOSED_TOOLS`, with entries separated by `;`:
-
-```env
-TELEGRAM_FILE_EXTENSIONS=send_file:.pdf,.png,.jpg;upload_file:.pdf,.png
+```
+telegram-mcp-go migrate-session --in "<session string>" --out ./migrate
 ```
 
-Naming a tool that already has a hardcoded default replaces that tool's whole
-set rather than adding to it; any tool left unnamed keeps its default (so
-leaving this unset keeps today's behavior unchanged). Extensions are
-case-insensitive and the leading dot is optional (`pdf` and `.pdf` are
-equivalent). An unknown tool name, a malformed extension, or the same tool
-named twice aborts startup, the same way a typo in `TELEGRAM_EXPOSED_TOOLS`
-does.
-
-This is defence in depth against accidents, not a security boundary. The check
-reads the final suffix, so an allowlist of `.pdf` still accepts
-`payload.exe.pdf`, and it says nothing about the bytes in the file. What it
-does reliably block is the careless case: extensionless secrets such as
-`id_rsa` or a bare `.env`. Files with ordinary extensions — `.pem`, `.key`, a
-`.json` token file, a `.sqlite` cookie store — are not covered unless you
-leave them out of the list yourself.
-
-Voice transcription (see [Voice transcription](#voice-transcription) above) is
-off by default in the sense that no transcript is ever fetched unless you ask
-for one — `transcribe_voice` is always available, and listings only pick up
-already-cached transcripts. Enable prefetching or pick an engine explicitly:
-
-```env
-TELEGRAM_TRANSCRIBE=on-demand       # off / on-demand (default) / auto
-TELEGRAM_TRANSCRIBE_ENGINE=groq     # groq (default), telegram, openai or whisper
-GROQ_API_KEY=your_groq_api_key_here # required whenever engine=groq is used
-```
-
-`engine=groq` requires `GROQ_API_KEY`; `engine=telegram` requires Telegram
-Premium on the account; `engine=openai` requires `TELEGRAM_TRANSCRIBE_OPENAI_URL`;
-`engine=whisper` requires the `whisper` extra. `TELEGRAM_TRANSCRIBE_MAX_VOICES` (default 5) and
-`TELEGRAM_TRANSCRIBE_MAX_SECONDS` (default 300) bound how much `auto` mode
-prefetches per listing call; `TELEGRAM_TRANSCRIPT_CACHE_DIR` (default
-`data/transcripts`) sets where the SQLite cache is written; `TELEGRAM_TRANSCRIBE_GROQ_MAX_MB`
-(default 25) is the largest recording the groq engine will upload.
-
-Telegram rate limits (`FloodWaitError`) are surfaced transparently to MCP clients and LLM agents with the exact wait duration and an explicit instruction not to retry immediately.
-
-Use `TELEGRAM_FLOOD_SLEEP_THRESHOLD` to configure Telethon's internal silent-sleep threshold (default: 60 seconds). Set to `0` to disable silent sleeping and let the agent manage all backoff pacing:
-
-```env
-TELEGRAM_FLOOD_SLEEP_THRESHOLD=60   # Max seconds Telethon sleeps silently on FloodWait (default 60)
-```
-
-Run the server locally:
-
-```bash
-uv run main.py
-```
+Decodes a pre-Go session string, rebuilds the equivalent gogram session (DC id, address, port, auth key, user id, app id), and writes `<out>_<label>.session` plus the printable session string. Use it to keep an existing login instead of re-authenticating. No network access is required.
 
 ## MCP Client Configuration
 
-### Claude Desktop extension (.mcpb)
+### stdio (recommended for desktop clients)
 
-The repository ships a `manifest.json`, so it can be packed into a
-[Claude Desktop extension](https://github.com/modelcontextprotocol/mcpb) and
-installed without editing any JSON:
-
-```bash
-npx @anthropic-ai/mcpb pack . telegram-mcp.mcpb
-```
-
-Open the resulting `telegram-mcp.mcpb` with Claude Desktop (or drag it onto
-Settings → Extensions) and fill in the API ID, API hash and session string
-(see [Quick Start](#quick-start) for generating one). Claude Desktop installs
-Python and the dependencies itself via `uv`, and masks the API hash and
-session string as sensitive fields. The allowed-chats and files-directory fields map to
-`TELEGRAM_ALLOWED_CHAT_IDS` and `TELEGRAM_ALLOWED_ROOTS`. `.mcpbignore` keeps
-`.env`, session files and logs out of the bundle.
-
-### Manual configuration
-
-For Claude Desktop or Cursor, point the MCP server at a cloned checkout of
-this project:
+The client launches the binary; nothing listens on a port.
 
 ```json
 {
   "mcpServers": {
-    "telegram-mcp": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/full/path/to/telegram-mcp",
-        "run",
-        "main.py"
-      ],
+    "telegram": {
+      "command": "telegram-mcp-go",
       "env": {
-        "TELEGRAM_API_ID": "your_api_id_here",
-        "TELEGRAM_API_HASH": "your_api_hash_here",
-        "TELEGRAM_SESSION_STRING": "your_session_string_here"
+        "TELEGRAM_API_ID": "123456",
+        "TELEGRAM_API_HASH": "0123456789abcdef0123456789abcdef",
+        "TELEGRAM_SESSION_STRING": "<session string>"
       }
     }
   }
 }
 ```
 
-To expose only read-only tools in Claude Desktop or Cursor, add this to the
-server `env` block:
+If the binary is not on the client's `PATH`, give an absolute path (the Docker form is `"command": "docker", "args": ["run", "-i", "--rm", "--env-file", ".env", "telegram-mcp-go"]`).
 
-```json
-"TELEGRAM_EXPOSED_TOOLS": "read-only"
-```
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows), `~/.config/Claude/claude_desktop_config.json` (Linux).
 
-Or keep read-only as the baseline and allow a few write tools on top:
+**Cursor** — `.cursor/mcp.json` in the project, or the global `~/.cursor/mcp.json`.
 
-```json
-"TELEGRAM_EXPOSED_TOOLS": "read-only+send_message,reply_to_message"
-```
-
-Alternatively, install this repository directly from GitHub into a virtual
-environment using a specific release tag or commit:
+### http (recommended for a shared, long-lived server)
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install "git+https://github.com/chigwell/telegram-mcp.git@<tag-or-commit>"
+MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8765 telegram-mcp-go
 ```
-
-Then configure your MCP client to run the installed console script:
 
 ```json
 {
   "mcpServers": {
-    "telegram-mcp": {
-      "command": "/full/path/to/.venv/bin/telegram-mcp",
-      "env": {
-        "TELEGRAM_API_ID": "your_api_id_here",
-        "TELEGRAM_API_HASH": "your_api_hash_here",
-        "TELEGRAM_SESSION_STRING": "your_session_string_here"
-      }
+    "telegram": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765"
     }
   }
 }
 ```
 
-Generate a session string without cloning the repo by sourcing this repository
-from GitHub explicitly:
+The HTTP transport is stateless: long-lived clients survive a server restart instead of losing their session ID.
+
+### Claude Code
 
 ```bash
-uvx --from "git+https://github.com/chigwell/telegram-mcp.git@<pinned-release-tag-or-commit>" telegram-mcp-generate-session
+claude mcp add telegram -- telegram-mcp-go
+claude mcp add --transport http telegram http://127.0.0.1:8765
 ```
 
-### Transports
+### Codex
 
-The server speaks three MCP transports, selected with `MCP_TRANSPORT`:
-
-| Value   | Transport                  | Use case                                                        |
-| ------- | -------------------------- | --------------------------------------------------------------- |
-| `stdio` | stdio (default)            | One dedicated server process per MCP client                     |
-| `http`  | streamable HTTP            | One shared server for many clients (Claude Code, Codex, Cursor) |
-| `sse`   | SSE (legacy HTTP)          | Clients that only support the deprecated SSE transport          |
-
-For `http` and `sse`, the server binds `MCP_HOST`:`MCP_PORT` (default
-`127.0.0.1:8765`); the streamable HTTP endpoint is `/mcp`, the SSE endpoint is
-`/sse`.
-
-If the server is reachable via a domain (e.g. behind a reverse proxy) rather
-than only `127.0.0.1`/`localhost`, set `MCP_ALLOWED_HOSTS` (and optionally
-`MCP_ALLOWED_ORIGINS`) to enable DNS-rebinding protection and allow that Host
-header, e.g. `MCP_ALLOWED_HOSTS=mcp.example.com`. Comma-separated; supports a
-`:*` suffix to allow any port. Left unset, DNS-rebinding protection stays off
-(the historical default).
-
-Prefer `http` when more than one MCP client (or many coding-agent sessions)
-will use the server: a single long-lived process holds one Telegram
-connection, instead of every client spawning its own Telethon session —
-Telegram throttles and may flag accounts that open many parallel sessions.
-
-Every tool call also has a server-side ceiling of 55 seconds, configured with
-`TELEGRAM_TOOL_TIMEOUT_SECONDS`. A timed-out Telegram request returns an explicit
-MCP error instead of leaving the client waiting indefinitely. The error says
-that completion is unknown: a write may already have succeeded, so check the
-destination before retrying. Set the value to `0` only for a deliberately
-unbounded operator session.
-
-Register the shared server with clients:
-
-```bash
-# Claude Code
-claude mcp add --transport http telegram http://127.0.0.1:8765/mcp
-
-# Codex
-codex mcp add telegram --url http://127.0.0.1:8765/mcp
+```toml
+[mcp_servers.telegram]
+command = "telegram-mcp-go"
+env = { TELEGRAM_API_ID = "123456", TELEGRAM_API_HASH = "0123456789abcdef0123456789abcdef", TELEGRAM_SESSION_STRING = "<session string>" }
 ```
 
-For stdio-only clients, bridge with [mcp-remote](https://www.npmjs.com/package/mcp-remote):
+## Transports
 
-```json
-{
-  "mcpServers": {
-    "telegram-mcp": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://127.0.0.1:8765/mcp"]
-    }
-  }
-}
-```
+| `MCP_TRANSPORT` | Behavior |
+|---|---|
+| `stdio` (default) | Newline-delimited JSON-RPC on stdin/stdout. One process per client. |
+| `http` | Streamable HTTP bound to `MCP_HOST:MCP_PORT` (default `127.0.0.1:8765`), stateless. |
+| `sse` | Legacy HTTP+SSE transport on the same address. |
+
+Any other value aborts start-up. `MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS` are parsed for the HTTP transports; they are not yet enforced by the listener — see [Known Gaps](#known-gaps). **Bind to loopback** unless you put an authenticating reverse proxy in front of the endpoint: the MCP endpoint itself is unauthenticated.
 
 ## Multi-Account Setup
 
-Use suffixed session variables to configure multiple Telegram accounts:
+Give each account a label by suffixing its variables with `_<LABEL>` (uppercase). Labels are discovered from the credentials themselves, so declaring a session for a label creates the account.
 
-```env
-TELEGRAM_API_ID=your_api_id_here
-TELEGRAM_API_HASH=your_api_hash_here
-TELEGRAM_SESSION_STRING_WORK=session_string_for_work
-TELEGRAM_SESSION_STRING_PERSONAL=session_string_for_personal
+```bash
+TELEGRAM_API_ID=123456
+TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+
+TELEGRAM_SESSION_STRING_PERSONAL=<string>
+TELEGRAM_EXPECTED_USERNAME_PERSONAL=@personal_account
+
+TELEGRAM_SESSION_STRING_WORK=<string>
+TELEGRAM_PROXY_TYPE_WORK=socks5
+TELEGRAM_PROXY_HOST_WORK=127.0.0.1
+TELEGRAM_PROXY_PORT_WORK=1080
 ```
 
-Labels are lowercased and become the `account` parameter value in tools.
+Tool calls take an `account` argument naming the label; omitting it routes to the default account. `list_accounts` returns the labels in discovery order together with each account's own profile.
 
-- In single-account mode, `account` is optional.
-- In multi-account mode, write tools require `account`.
-- Read-only tools fan out to all accounts when `account` is omitted.
+The shared API ID/hash apply to every account; only session, expected-username and proxy variables are per-label. Declaring a session for a label with no matching API credentials fails loudly at start-up.
 
-Example prompts:
+### Session pool
 
-- "List my accounts"
-- "Show unread messages from all accounts"
+One account, several concurrent clients:
 
-### Session pool (one account, several concurrent clients)
-
-To run several MCP clients against the **same** Telegram account at once (for
-example the desktop app *and* a terminal CLI), give each client its own
-authorized session. Telegram forbids one session (auth key) being used from two
-IPs simultaneously, so on a VPN or dual-stack host two local clients can collide
-with `AuthKeyDuplicatedError`. List several interchangeable session strings in
-`TELEGRAM_SESSION_STRINGS` (separated by whitespace, comma or semicolon); each
-process claims a free one via an advisory file lock, so clients deterministically
-pick distinct sessions:
-
-```env
-TELEGRAM_SESSION_STRINGS=<session A> <session B> <session C>
+```bash
+# Whitespace, comma or semicolon separated; the first free entry is claimed.
+TELEGRAM_SESSION_STRINGS=<string 1> <string 2> <string 3>
 ```
 
-Generate extra sessions with `uv run session_string_generator.py`. The pool
-takes precedence over `TELEGRAM_SESSION_STRING` for the default account. As an
-extra safety net, a transient `AuthKeyDuplicatedError` at connect time (e.g.
-during a VPN reconnect) is retried with backoff before the server gives up.
+Each pooled string is claimed through an advisory lock, so two server processes sharing one account take different logins instead of colliding on the same session.
 
-Size the pool to the number of clients you actually run concurrently. If every
-slot is already claimed, the server refuses to start with an explicit error
-rather than reusing a session another client holds — reuse would make Telegram
-permanently invalidate that session for both clients.
-- "Send this from my work account to @example"
+### Session lock modes
 
-### Sharing one session from one host
+| `TELEGRAM_SESSION_LOCK` | Effect |
+|---|---|
+| `exclusive` (default) | One server process per session; others wait up to `TELEGRAM_LOCK_GRACE_SECONDS` (default 20) and then exit. |
+| `shared` | Multiple processes may hold the same session. |
 
-Before connecting, every server process takes a per-session lock (see the
-`AuthKeyDuplicatedError` entry under Troubleshooting). By default it is
-exclusive: a second instance for the same session waits briefly for the first
-to exit and otherwise refuses to start. That lock can only see processes on the
-same host, and Telegram's rule is about IPs, not processes: instances on one
-host only collide when they reach Telegram from different IPs (dual-stack or
-split-tunnel VPN hosts). When they all share one egress IP — a laptop running
-several MCP clients — you can let them share the session instead of pooling:
-
-```env
-TELEGRAM_SESSION_LOCK=shared
-```
-
-Shared instances coexist with each other but never overlap an exclusive one
-(except on Windows, where a shared instance takes no lock). If you are not sure
-every client egresses from the same IP, use the pool.
+Any other value aborts start-up. A session file (`TELEGRAM_SESSION_NAME`, default `telegram_session`) is used when no session string is set; a session string always takes precedence.
 
 ## Device Identity
 
-These optional variables control how the client appears in Telegram under
-**Settings > Devices** (the active-sessions list):
+Telegram shows these three strings in the active-sessions list. They default to the host platform values; override them to make a server's sessions recognizable:
 
-```env
-TELEGRAM_DEVICE_MODEL=Telegram MCP
-TELEGRAM_SYSTEM_VERSION=1.0
+```bash
+TELEGRAM_DEVICE_MODEL=My Server
+TELEGRAM_SYSTEM_VERSION=Linux
 TELEGRAM_APP_VERSION=1.0
 ```
 
-If left unset, Telethon falls back to the host platform (for example `arm64`).
-Because these values are re-sent on every connection, a long-running server
-would otherwise overwrite the name chosen during login on each reconnect, so
-set them to keep a stable, recognisable device name. The same variables are
-read both by the session string generator (at login) and by the server (on
-every connect), so set them in the same place as your other credentials.
-
 ## Expected Account Check
 
-Set `TELEGRAM_EXPECTED_USERNAME` (or `TELEGRAM_EXPECTED_USERNAME_<LABEL>` per account) and the server refuses to start when the session belongs to a different account. The comparison is case-insensitive and ignores a leading `@`. Unset means no check.
+A session string is a bearer credential: whoever holds it owns the account. Pin the session to the account you expect, and the server refuses to start otherwise:
+
+```bash
+TELEGRAM_EXPECTED_USERNAME=@my_account          # global
+TELEGRAM_EXPECTED_USERNAME_WORK=@work_account  # per label
+```
+
+The check is disabled while unset.
 
 ## Proxy Support
 
-Route Telegram traffic through a proxy by setting the `TELEGRAM_PROXY_*`
-environment variables. Supported types are `socks5`, `socks4`, `http`, and
-`mtproxy`.
-
-SOCKS and HTTP proxies require the optional `python-socks` package:
-
 ```bash
-uv sync --extra proxy
-# or
-pip install python-socks
-```
-
-Single-account configuration:
-
-```env
-TELEGRAM_PROXY_TYPE=socks5
+TELEGRAM_PROXY_TYPE=socks5      # socks5 | socks4 | http | mtproxy
 TELEGRAM_PROXY_HOST=127.0.0.1
 TELEGRAM_PROXY_PORT=1080
-TELEGRAM_PROXY_USERNAME=optional_user
-TELEGRAM_PROXY_PASSWORD=optional_pass
-TELEGRAM_PROXY_RDNS=true
+TELEGRAM_PROXY_USERNAME=user    # optional
+TELEGRAM_PROXY_PASSWORD=pass    # optional
+TELEGRAM_PROXY_RDNS=true        # default true
+TELEGRAM_PROXY_SECRET=...       # required for mtproxy (hex secret)
 ```
 
-MTProxy:
-
-```env
-TELEGRAM_PROXY_TYPE=mtproxy
-TELEGRAM_PROXY_HOST=mtproxy.example
-TELEGRAM_PROXY_PORT=443
-TELEGRAM_PROXY_SECRET=ee0123456789abcdef...
-```
-
-Per-account overrides use the same `_<LABEL>` suffix as session variables and
-take precedence over the unsuffixed defaults:
-
-```env
-TELEGRAM_PROXY_TYPE=socks5
-TELEGRAM_PROXY_HOST=127.0.0.1
-TELEGRAM_PROXY_PORT=1080
-
-TELEGRAM_PROXY_TYPE_WORK=http
-TELEGRAM_PROXY_HOST_WORK=proxy.work.example
-TELEGRAM_PROXY_PORT_WORK=3128
-```
-
-Misconfigured proxy settings (unknown type, missing host/port, invalid port,
-missing MTProxy secret, or a missing `python-socks` package) cause the server
-to fail fast at startup with a clear error message instead of silently
-bypassing the proxy.
+Prefix any of these with the account label for a per-account proxy (`TELEGRAM_PROXY_TYPE_WORK`, `TELEGRAM_PROXY_HOST_WORK`, ...). A malformed proxy setting aborts start-up rather than silently connecting directly.
 
 ## File Path Security
 
-File-path and media tools (`send_file`, `download_media`, `upload_file`, `send_voice`, `send_sticker`, `set_profile_photo`, `edit_chat_photo`, and `send_album`) are registered and supported, but remain strictly disabled by default until allowed roots are configured (safe-by-default to prevent unauthorized file access).
+File tools never touch a path the operator has not allowed. Roots come from two places:
 
-Allowed roots can come from:
+- **Client roots** — the MCP `roots/list` result from the connected client.
+- **Server roots** — `TELEGRAM_ALLOWED_ROOTS`, a delimiter-separated path list.
 
-- **Environment Variable (`TELEGRAM_ALLOWED_ROOTS`):** Semicolon- (`;`) or comma- (`,`) separated paths (also supports colon `:` on POSIX systems). Ideal for Docker, headless daemon setups, and MCP clients that pass settings via environment.
-- **Server CLI arguments:** Positional folder paths passed to `main.py`, used as a server-side fallback.
-- **MCP client Roots:** Configured directly in supported MCP clients (`roots/list`).
-
-Security behavior:
-
-- Client MCP Roots replace server CLI roots when available.
-- Some clients (notably Cursor) return workspace roots as bare absolute paths
-  instead of `file://` URIs. That breaks MCP SDK validation of `list_roots`;
-  the server recovers those absolute paths from the validation error so
-  file-path tools keep working.
-- Empty client Roots are treated as deny-all by default. Some clients implement
-  the Roots capability but advertise an empty list, which disables file tools
-  even when server CLI roots are configured. Set
-  `TELEGRAM_ALLOW_SERVER_ROOTS_FALLBACK=1` to fall back to the server CLI roots
-  in that case (opt-in; the default stays deny-all). The same opt-in also applies
-  when `list_roots` fails unexpectedly and no client paths could be recovered.
-- `roots/list` times out after `TELEGRAM_ROOTS_TIMEOUT_SECONDS` (default 10).
-  With server roots configured, `TELEGRAM_SERVER_ROOTS_ONLY=1` uses them directly
-  and skips `roots/list`; client Roots are then ignored.
-- Paths are resolved through real paths and must stay inside an allowed root.
-- Traversal, wildcard-like, shell-like, and null-byte path patterns are rejected.
-- Relative paths resolve under the first allowed root.
-- Downloads default to `<first_root>/downloads/`.
-- Size and extension limits are enforced for sensitive media tools. `send_file`
-  and `upload_file` have no extension limit by default; see
-  `TELEGRAM_FILE_EXTENSIONS` above to add one.
-
-Run with allowed roots via environment variable:
+Client roots replace server roots. Every unusable state (no roots, a client that does not implement roots, a roots call that times out) ends in deny-all unless you opt in explicitly:
 
 ```bash
-# Semicolon- or comma-separated roots
-TELEGRAM_ALLOWED_ROOTS="/data/telegram,/tmp/telegram-mcp" uv run main.py
+TELEGRAM_ALLOWED_ROOTS=/data/media:/srv/downloads   # explicit server roots
+TELEGRAM_ALLOW_SERVER_ROOTS_FALLBACK=true          # server roots may replace an empty client list
+TELEGRAM_SERVER_ROOTS_ONLY=true                    # use server roots, skip roots/list entirely
+TELEGRAM_ROOTS_TIMEOUT_SECONDS=10                  # bound the roots/list wait
 ```
 
-Or run with allowed roots via CLI positional arguments:
+Path traversal (`../`) and symlink escapes are rejected; the failure messages are stable strings, so a client can react to them. Accepted extensions per tool are narrowed with `TELEGRAM_FILE_EXTENSIONS`:
 
 ```bash
-uv run main.py /data/telegram /tmp/telegram-mcp
-```
-
-From an MCP client configuration, you can pass roots via `env` or as arguments after `main.py`:
-
-```json
-{
-  "mcpServers": {
-    "telegram-mcp": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/full/path/to/telegram-mcp",
-        "run",
-        "main.py",
-        "/data/telegram",
-        "/tmp/telegram-mcp"
-      ],
-      "env": {
-        "TELEGRAM_API_ID": "your_api_id_here",
-        "TELEGRAM_API_HASH": "your_api_hash_here",
-        "TELEGRAM_SESSION_STRING": "your_session_string_here"
-      }
-    }
-  }
-}
+# tool:.ext,.ext entries, semicolon separated, case-insensitive, leading dot optional
+TELEGRAM_FILE_EXTENSIONS="download_media:.jpg,.mp4;send_document:.pdf"
 ```
 
 ## Chat Access Privacy (Allowlist)
 
-To restrict AI agents or MCP clients to specific chats only (preventing access to all private or corporate conversations), configure `TELEGRAM_ALLOWED_CHAT_IDS`:
+Restrict every chat-addressed tool to an explicit set of chats. `-100…` supergroup ids and `@usernames` are accepted; a malformed id aborts start-up.
 
-```env
-# Comma-separated list of allowed chat IDs, supergroup IDs, or usernames
-TELEGRAM_ALLOWED_CHAT_IDS=12345678,-100123456789,@allowed_channel
+```bash
+TELEGRAM_ALLOWED_CHAT_IDS=123456789,-1001234567890,@my_channel
 ```
 
-When `TELEGRAM_ALLOWED_CHAT_IDS` is set:
-- **`list_chats` / `get_chats`:** Only chats matching the allowlist are returned; all other conversations remain completely invisible to the agent.
-- **Messaging & Chat Tools (`send_message`, `get_messages`, `get_chat`, `create_poll`, etc.):** Any attempt to interact with a chat outside the allowlist is rejected with a structured error message: `Access to chat '<chat_id>' is restricted by privacy policy (TELEGRAM_ALLOWED_CHAT_IDS)`.
-- **Search & Drafts (`search_global`, `get_drafts`):** Global searches and draft listings omit unallowed conversations.
-- **Incoming Events:** Notifications and debounce feeds only process events from allowed chats.
+Leave it unset to disable the gate.
 
-If `TELEGRAM_ALLOWED_CHAT_IDS` is unset or empty, the server operates in unrestricted mode (default), preserving 100% backward compatibility.
+## Voice Transcription
+
+`TELEGRAM_TRANSCRIBE` selects when transcription happens: `off`, `on-demand` (the default — the agent asks for a transcript) or `auto` (prefetch within a per-call budget). `TELEGRAM_TRANSCRIBE_ENGINE` selects the engine:
+
+| Engine | Requirements |
+|---|---|
+| `telegram` | none — Telegram's server-side transcription of voice notes and video |
+| `groq` (default) | `GROQ_API_KEY` |
+| `openai` | `TELEGRAM_TRANSCRIBE_OPENAI_URL` (+ optional `TELEGRAM_TRANSCRIBE_OPENAI_API_KEY` for keyless local servers) |
+| `whisper` | `TELEGRAM_WHISPER_BASE_URL` — see [Known Gaps](#known-gaps) |
+
+```bash
+TELEGRAM_TRANSCRIBE=auto
+TELEGRAM_TRANSCRIBE_ENGINE=groq
+GROQ_API_KEY=gsk_...
+TELEGRAM_TRANSCRIBE_LANGUAGE=en        # ISO-639-1 hint; unset = auto-detect
+TELEGRAM_TRANSCRIBE_TIMEOUT=120        # seconds, HTTP engines
+```
+
+Transcripts are cached under `TELEGRAM_TRANSCRIPT_CACHE_DIR` (default `data/transcripts`) in a JSON file with `0700`/`0600` permissions. The cache is keyed by source, so a row written by one engine is never served to another; entries never expire. An existing cache from the pre-Go implementation is **not** readable — see [Known Gaps](#known-gaps).
+
+Transcripts are machine readings, not quotes: results always carry `source` next to `text`.
+
+## Event Feed
+
+`TELEGRAM_EVENT_FEED=true` lets a callback-capable client receive incoming messages as events instead of polling. The feed is appended to `TELEGRAM_EVENT_FEED_FILE` (default under `$XDG_STATE_HOME`, else `~/.local/state`), and `TELEGRAM_ALIASES_FILE` points at an aliases JSON file that resolves chat nicknames to ids.
 
 ## Docker
 
-Build the image:
-
 ```bash
-docker build -t telegram-mcp:latest .
-```
-
-### Shared server (recommended)
-
-Run one long-lived container serving streamable HTTP, and point every MCP
-client at it (see [Transports](#transports) for client registration):
-
-```bash
-docker run -d --name telegram-mcp --restart unless-stopped \
-  --env-file .env \
-  -e MCP_TRANSPORT=http \
-  -e MCP_HOST=0.0.0.0 \
-  -p 127.0.0.1:8765:8765 \
-  telegram-mcp:latest
-```
-
-`MCP_HOST=0.0.0.0` binds inside the container so the published port works;
-`-p 127.0.0.1:8765:8765` keeps the server reachable only from the local
-machine — the endpoint is unauthenticated, so never publish it on a public
-interface.
-
-The bundled Compose file runs the same setup:
-
-```bash
+cp .env.example .env      # fill in api_id / api_hash / session string
 docker compose up --build -d
+curl http://127.0.0.1:8765   # MCP endpoint, if MCP_TRANSPORT=http
 ```
 
-It also mounts `./transcript_cache` into the container at
-`/app/data/transcripts` so the voice-transcription SQLite cache (see
-[Voice transcription](#voice-transcription)) survives a rebuild instead of
-living in the container's writable layer. Create it once, owned by the
-container's `appuser` (uid 1000), before starting:
+The image is a two-stage build: `golang:1.27` compiles a static, `CGO_ENABLED=0`, `-trimpath` binary; the runtime stage is `gcr.io/distroless/static-debian12:nonroot` — distroless rather than `scratch` because gogram needs a CA bundle to verify TLS against Telegram. The image runs as uid/gid `65532` and ships no shell.
+
+`docker-compose.yml` serves streamable HTTP on `127.0.0.1:8765` with `MCP_HOST=0.0.0.0` inside the container, and persists two paths:
+
+| Host path | Container path | Why |
+|---|---|---|
+| `./transcript_cache` | `/app/data/transcripts` | transcript cache; otherwise lost on every rebuild. Prepare it with `mkdir -p ./transcript_cache && chown 65532:65532 ./transcript_cache` |
+| `./telegram_sessions` | `/app/telegram_sessions` | session files — uncomment the volume when you do not supply `TELEGRAM_SESSION_STRING` |
+
+The transcript cache holds plaintext transcripts of your personal chats. Give it its own backup and retention policy rather than letting it ride along with a general backup.
+
+## Environment Variables
+
+### Fail-loud vs default
+
+Two failure modes, and the difference matters when you debug a start-up that refuses to boot:
+
+- **Fail-loud** — a malformed or missing value aborts start-up with a one-line error on stderr and a non-zero exit. Used for anything whose bad value would silently weaken security or route traffic somewhere wrong.
+- **Default** — an invalid or empty value falls back to the documented default.
+
+### Credentials and sessions
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_API_ID` | — | **Required.** The numeric `api_id`; a missing or non-integer value fails loud. |
+| `TELEGRAM_API_HASH` | — | **Required.** `api_hash` string. |
+| `TELEGRAM_SESSION_STRING` | — | Portable session string; takes precedence over the session file. |
+| `TELEGRAM_SESSION_NAME` | `telegram_session` | Session file name, used when no session string is set. |
+| `TELEGRAM_SESSION_STRINGS` | — | Pool of session strings (whitespace, comma or semicolon separated). Takes precedence over `TELEGRAM_SESSION_STRING`; the first free entry is claimed under an advisory lock. |
+| `TELEGRAM_SESSION_LOCK` | `exclusive` | `exclusive` or `shared`; anything else fails loud. |
+| `TELEGRAM_LOCK_GRACE_SECONDS` | `20` | Seconds to wait for a locked session before exiting; non-integer fails loud. |
+| `TELEGRAM_EXPECTED_USERNAME` | — | Refuse to start unless the session belongs to this account. |
+| `TELEGRAM_DEVICE_MODEL` | platform default | Device string shown in active sessions. |
+| `TELEGRAM_SYSTEM_VERSION` | platform default | OS string shown in active sessions. |
+| `TELEGRAM_APP_VERSION` | platform default | App string shown in active sessions. |
+| `TELEGRAM_SESSION_STRING_<LABEL>` | — | Per-account session string; the label is discovered from these variables. |
+| `TELEGRAM_SESSION_NAME_<LABEL>` | `telegram_session_<LABEL>` | Per-account session file. |
+| `TELEGRAM_EXPECTED_USERNAME_<LABEL>` | — | Per-account expected-username check. |
+
+### Tool surface
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_EXPOSED_TOOLS` | `all` | `all`, `read-only`, or `read-only+tool,tool` to re-add named writes. An unknown tool name or a malformed value fails loud. |
+| `TELEGRAM_FILE_EXTENSIONS` | per-tool defaults | `tool:.ext,.ext` entries separated by `;`. Case-insensitive, leading dot optional; a duplicate tool or malformed extension fails loud. |
+| `TELEGRAM_TOOL_TIMEOUT_SECONDS` | `55` | Per-call ceiling. `0` or negative disables it. Non-numeric falls back to the default. |
+| `TELEGRAM_FLOOD_SLEEP_THRESHOLD` | `60` | Seconds a `FloodWait` may sleep before the tool fails instead; non-integer fails loud. |
+
+### File access
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_ALLOWED_ROOTS` | — | Delimiter-separated path list; empty means deny-all. |
+| `TELEGRAM_ALLOW_SERVER_ROOTS_FALLBACK` | `false` | Allow server roots to replace an empty or unusable client roots list. |
+| `TELEGRAM_SERVER_ROOTS_ONLY` | `false` | Use server roots and skip the `roots/list` request. |
+| `TELEGRAM_ROOTS_TIMEOUT_SECONDS` | — | Bound the `roots/list` wait; non-integer fails loud. |
+
+### Privacy
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_ALLOWED_CHAT_IDS` | — | Comma-separated chat ids, `-100…` supergroup ids and `@usernames`. A malformed id fails loud. |
+
+### Proxy
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_PROXY_TYPE` | — | `socks5`, `socks4`, `http` or `mtproxy`; anything else fails loud. |
+| `TELEGRAM_PROXY_HOST` | — | Proxy host. |
+| `TELEGRAM_PROXY_PORT` | — | Proxy port; non-integer fails loud. |
+| `TELEGRAM_PROXY_USERNAME` | — | Proxy username. |
+| `TELEGRAM_PROXY_PASSWORD` | — | Proxy password. |
+| `TELEGRAM_PROXY_RDNS` | `true` | Remote DNS resolution through the proxy. |
+| `TELEGRAM_PROXY_SECRET` | — | Hex secret; required when the type is `mtproxy`. |
+| `TELEGRAM_PROXY_<NAME>_<LABEL>` | — | Per-account override of any of the above. |
+
+### Transcription
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_TRANSCRIBE` | `on-demand` | `off`, `on-demand` or `auto`; anything else fails loud. |
+| `TELEGRAM_TRANSCRIBE_ENGINE` | `groq` | `telegram`, `groq`, `openai` or `whisper`; anything else fails loud. |
+| `GROQ_API_KEY` | — | Required whenever the `groq` engine resolves. |
+| `TELEGRAM_TRANSCRIBE_LANGUAGE` | auto | ISO-639-1 lowercase language hint. |
+| `TELEGRAM_TRANSCRIBE_TIMEOUT` | `120` | Seconds for HTTP engines; non-integer fails loud. |
+| `TELEGRAM_TRANSCRIBE_OPENAI_URL` | — | Base URL or full `/audio/transcriptions` URL; required for `engine=openai`. |
+| `TELEGRAM_TRANSCRIBE_OPENAI_API_KEY` | — | Optional key, for keyless local servers. |
+| `TELEGRAM_TRANSCRIBE_OPENAI_MODEL` | engine default | Model name. |
+| `TELEGRAM_TRANSCRIBE_OPENAI_MAX_MB` | `25` | Upload ceiling in MB. |
+| `TELEGRAM_TRANSCRIBE_GROQ_MAX_MB` | `25` | Upload ceiling in MB for the Groq engine. |
+| `TELEGRAM_TRANSCRIBE_WHISPER_MODEL` | `small` | Model name for the `whisper` engine. |
+| `TELEGRAM_TRANSCRIBE_WHISPER_DEVICE` | `auto` | `auto`, `cpu` or `cuda`; anything else fails loud. |
+| `TELEGRAM_TRANSCRIBE_WHISPER_COMPUTE_TYPE` | engine default | e.g. `int8`, `float16`. |
+| `TELEGRAM_TRANSCRIBE_WHISPER_MODEL_DIR` | — | Model cache location. |
+| `TELEGRAM_TRANSCRIBE_MAX_VOICES` | `5` | Per-call prefetch budget in `auto` mode. |
+| `TELEGRAM_TRANSCRIBE_MAX_SECONDS` | `300` | Per-call prefetch budget in `auto` mode. |
+| `TELEGRAM_TRANSCRIPT_CACHE_DIR` | `data/transcripts` | Cache directory (mode `0700`, file `0600`). |
+
+### Events, aliases and misc
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `TELEGRAM_EVENT_FEED` | `false` | Enable the incoming-event feed. |
+| `TELEGRAM_EVENT_FEED_FILE` | under `$XDG_STATE_HOME` | Event feed file path. |
+| `XDG_STATE_HOME` | `~/.local/state` | Base directory for state files. |
+| `TELEGRAM_ALIASES_FILE` | — | Aliases JSON under the state directory; a missing file means no aliases. |
+| `TELEGRAM_CONTACT_FUZZY` | `true` | Fuzzy contact-name matching. |
+| `TELEGRAM_LINK_DOMAIN` | `t.me` | Domain used to build message links. |
+| `TELEGRAM_MCP_ERROR_LOG` | `<project root>/mcp_errors.log` | Override the error-log path. |
+| `TELEGRAM_MCP_PROJECT_ROOT` | nearest ancestor with `go.mod` | Override the project root used to place `mcp_errors.log`. |
+
+### Transport
+
+| Variable | Default | Behavior |
+|---|---|---|
+| `MCP_TRANSPORT` | `stdio` | `stdio`, `http` or `sse`; anything else fails loud. |
+| `MCP_HOST` | `127.0.0.1` | Bind address for the HTTP transports. |
+| `MCP_PORT` | `8765` | Bind port; non-integer fails loud. |
+| `MCP_ALLOWED_HOSTS` | — | Comma-separated hosts, `:*` port suffix allowed. |
+| `MCP_ALLOWED_ORIGINS` | — | Comma-separated origins. |
+
+## Known Gaps
+
+Everything in this section is a real deviation from the behavior the pre-Go implementation had. Each one is deliberate or unfinished, not a bug to file.
+
+### 1. Cutover status: session boot and CLI subcommands
+
+The MTProto layer (`internal/session`: connect, advisory locks, session pool, device identity, expected-username check) is complete and unit-tested, but the boot path does not open a session yet — `mcpserver.Main` loads the configuration, builds the server and serves the tool surface, and every tool that needs a client answers with a not-connected error. The single-binary entry point (`telegram-mcp-go` as the server action, plus the `gen-session` and `migrate-session` subcommands) lands with the same cutover; the flag surface of those subcommands may still move before the tag.
+
+### 2. Local whisper is now an OpenAI-compatible endpoint
+
+The pre-Go implementation loaded a faster-whisper model in-process: the audio never left the machine, and the model/device/compute-type variables selected a local runtime. Go has no in-process equivalent that could be added without new dependencies, so `engine=whisper` now posts to an OpenAI-compatible `/audio/transcriptions` endpoint:
 
 ```bash
-mkdir -p ./transcript_cache && chown 1000:1000 ./transcript_cache
+TELEGRAM_TRANSCRIBE_ENGINE=whisper
+TELEGRAM_WHISPER_BASE_URL=http://localhost:8000/v1   # required
+TELEGRAM_WHISPER_MODEL=small                          # defaults to TELEGRAM_TRANSCRIBE_WHISPER_MODEL
+TELEGRAM_WHISPER_DEVICE=auto                          # defaults to TELEGRAM_TRANSCRIBE_WHISPER_DEVICE
 ```
 
-### One container per client (stdio)
+Audio leaves the machine unless that endpoint is itself local. `TELEGRAM_TRANSCRIBE_WHISPER_COMPUTE_TYPE` and `..._MODEL_DIR` are parsed but have no local runtime to configure, and the "faster-whisper is not installed" message is replaced by base-URL validation. Use `engine=telegram` when you want transcription that never leaves Telegram's servers.
 
-Alternatively, an MCP client can spawn a dedicated container itself:
+### 3. The transcript cache is a JSON file
 
-```json
-{
-  "mcpServers": {
-    "telegram-mcp": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "--env-file", "/full/path/to/.env", "telegram-mcp:latest"]
-    }
-  }
-}
-```
+The cache is `data/transcripts/transcripts.json` (mode `0600`) instead of a SQLite database, because no SQLite driver could be added to the module. Semantics match: the key is pinned by source, an unpinned read prefers the default engine's row and then the newest, and entries never expire. An existing cache from the pre-Go implementation is **not** readable — the first run after upgrading re-transcribes everything once.
 
-This is fine for a single client, but with several clients (or coding agents
-that spawn subagent sessions) each one starts its own container and its own
-Telegram session, which Telegram throttles; a client that exits uncleanly can
-also leave its container running. Prefer the shared server above in those
-setups.
+### 4. Policy parsed at start-up is not yet installed into the tools
 
-For multiple accounts, pass variables such as `TELEGRAM_SESSION_STRING_WORK` and `TELEGRAM_SESSION_STRING_PERSONAL`.
+`internal/config` parses and validates `TELEGRAM_ALLOWED_ROOTS`, `TELEGRAM_ALLOWED_CHAT_IDS`, the file-extension overrides and the transcription/event-feed settings, but the boot path does not install them into the tool-layer dependency structs yet. Until it does:
+
+- file-path tools deny every path (the gate falls back to its unconfigured state, which is deny-all);
+- `TELEGRAM_ALLOWED_CHAT_IDS` does not restrict chat-addressed tools.
+
+Both fail closed, and both are on the wiring list for the cutover. Do not rely on them as a security boundary until the wiring lands.
+
+### 5. `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` are parsed but not enforced
+
+The two variables are read at start-up, but the HTTP listener does not apply them to incoming requests, so there is no DNS-rebinding guard yet. Bind to `127.0.0.1`, or put an authenticating reverse proxy in front of the endpoint.
+
+### 6. No MCPB desktop bundle
+
+The `.mcpb` desktop extension manifest is not part of the Go build. Configure the client with a config file (see [MCP Client Configuration](#mcp-client-configuration)); there is no double-click installer.
+
+### 7. The SDK is not confined to `internal/kit` and `internal/session`
+
+`internal/tools/messages` and `internal/tools/groups` import gogram directly for their domain adapters (message objects, RPC params), and their tests build gogram fixtures. Tool *bodies* still run against interface seams with injected fakes, so the offline test suite exercises the real logic; the layering rule "the SDK lives behind a seam" is upheld in spirit but not literally. This deviation is on the record in `.omo/go-port/verify-tools-verdict.md` and waived in `.omo/go-port/waiver-launch-run3.md`.
 
 ## Development
 
-The implementation is split into a small compatibility entrypoint and modular package code:
-
-```text
-main.py                    # historical entrypoint and compatibility exports
-telegram_mcp/runtime.py    # shared MCP setup, account routing, validation, file safety
-telegram_mcp/runner.py     # application startup
-telegram_mcp/tools/        # tool modules grouped by domain
-sanitize.py                # output sanitization helpers
-tests/                     # pytest suite
-```
-
-Run tests:
-
 ```bash
-uv run pytest
+go build ./...
+go vet ./...
+go test ./... -count=1
 ```
 
-Run tests with coverage:
+The whole suite is offline: `t.TempDir()`, `httptest` for HTTP engines, and injected fakes for gogram. No test opens a network connection or a real Telegram session.
 
-```bash
-uv run pytest --cov --cov-report=term-missing --cov-report=xml
+```
+cmd/telegram-mcp-go/     process entry point
+internal/config/         environment parsing and validation (fail-loud rules)
+internal/session/        MTProto sessions: connect, advisory locks, pool, device identity
+internal/kit/            shared helpers: sanitizer, error funnel, aliases, rich text,
+                         photo sources, contact sheets, transcription, kit/paths (path gate)
+internal/mcpserver/      MCP boot: registry, exposure pruning, transports, --dry-run
+internal/tools/          the 132 tools, one package per domain
 ```
 
-Coverage is configured in `pyproject.toml` with an 80% minimum gate for deterministic unit-testable core modules. GitHub Actions runs the same coverage command and uploads `coverage.xml`.
-
-Run formatting checks:
-
-```bash
-uv run black --check .
-uv run flake8 .
-```
+Adding a tool: create or extend a package under `internal/tools/`, register it with `mcpserver.RegisterTool[In]` (typed input struct — the SDK derives the JSON schema from it), set the safety annotations honestly (`ReadOnly` is what `TELEGRAM_EXPOSED_TOOLS=read-only` keys on), and return the formatted error string instead of panicking. `internal/mcpserver/tool_surface_test.go` asserts the registered set against `.omo/go-port/parity/inventory.json`, so a rename or a missing registration fails the build's tests.
 
 ## Security Notes
 
-- Never commit `.env`, session strings, or `.session` files.
-- A Telegram session string grants access to the account it belongs to.
-- The `telegram-mcp` package name on PyPI is not controlled by this project.
-  Avoid PyPI-based `telegram-mcp` install commands unless ownership changes and
-  the package is verified.
-- This repository includes a best-effort startup guard that refuses installed
-  `telegram-mcp` distributions without a source checkout or direct git/file
-  install record. That guard cannot run when the unrelated PyPI package itself
-  is launched, so use clone-based or explicit git installs.
-- Prefer session strings over file sessions when running multiple server instances.
-- By default, Telegram API calls go directly from your machine/container to Telegram.
-  If `TELEGRAM_PROXY_*` is configured, Telegram traffic is routed through the
-  configured SOCKS/HTTP/MTProxy proxy instead.
-- User-generated Telegram content is sanitized before being returned to MCP clients.
-
-### Prompt Injection Protection
-
-Telegram messages, display names, chat titles, and button labels are untrusted content. The server mitigates prompt-injection risk with:
-
-- Structured JSON output for user-controlled data where practical.
-- `sanitize_user_content()`, `sanitize_name()`, and `sanitize_dict()` for control-character stripping, invisible-character stripping, and length limits.
-- MCP content annotations marking returned content as user audience data.
-- Tool descriptions that warn clients not to treat returned Telegram fields as model instructions.
-- No brittle keyword-based filtering.
+- **The session string is a bearer credential.** Anyone holding it owns the account. Pin it with `TELEGRAM_EXPECTED_USERNAME`, keep it out of version control, and rotate it from the Telegram app's active-session list if it leaks.
+- **Tool annotations are a security boundary.** `TELEGRAM_EXPOSED_TOOLS=read-only` prunes every tool without `readOnlyHint`; a wrong annotation is a real leak, not a cosmetic hint.
+- **File access is deny-all by default.** Roots come from the client or from `TELEGRAM_ALLOWED_ROOTS`, and every other state is a refusal.
+- **Error strings are written for a model, not a human.** `FloodWait` and privacy denials return prose that says what happened and what not to do; they never echo message content, ids or paths into the logs.
+- **The HTTP endpoint is unauthenticated.** Loopback or a reverse proxy only.
+- **Prompt injection is sanitized, not solved.** Control characters, zero-width and bidi overrides are stripped from Telegram-sourced text before it reaches the model; the model still reads untrusted content and should be told so.
 
 ## Troubleshooting
 
-- **No Telegram session configured:** set `TELEGRAM_SESSION_STRING`, `TELEGRAM_SESSION_NAME`, or suffixed multi-account variants.
-- **Session is not authorized:** run `uv run session_string_generator.py --qr` outside
-  the MCP server when you can scan from an existing Telegram app, or
-  `uv run session_string_generator.py --phone` when you need phone-code login.
-  Then set `TELEGRAM_SESSION_STRING` in `.env`. The MCP server does not perform
-  interactive phone-code login over stdio, including after a reconnect: a session
-  terminated while the server runs fails with "not authorized after reconnect".
-- **Invalid API credentials:** verify `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` at [my.telegram.org/apps](https://my.telegram.org/apps).
-- **Database is locked:** make sure no other process is using the same file session.
-- **`AuthKeyDuplicatedError` / "Another telegram-mcp process is already connected with this session":** two processes tried to connect the same Telegram session at once (e.g. an MCP client restarted the connector before the old process exited), which Telegram rejects and can invalidate the session for both. The server now takes an exclusive lock per session before connecting; a second concurrent launch waits briefly (default 20s, override with `TELEGRAM_LOCK_GRACE_SECONDS`) for the first to release it and otherwise exits without ever calling `connect()`, instead of racing into a duplicate connection. Retry once only one instance is running — the refusal names the PID holding the lock. If several instances on this host are meant to share one session (all reaching Telegram from the same IP), set `TELEGRAM_SESSION_LOCK=shared`; see [Sharing one session from one host](#sharing-one-session-from-one-host).
-- **File tools are disabled:** pass allowed roots or configure MCP Roots in your client.
-- **File tools wait for `roots/list`:** configure server roots and set `TELEGRAM_SERVER_ROOTS_ONLY=1`.
-- **Path rejected:** ensure the path is inside an allowed root and does not use traversal or wildcard patterns.
-- **Auth errors after password changes:** regenerate your session string.
-- **Bot-only tool rejected:** regular user accounts cannot manage bot command settings.
-- **Need details:** check your MCP client logs, terminal output, and `mcp_errors.log`.
-
-## Contributing
-
-1. Fork and clone the repository.
-2. Install dependencies and git hooks:
-   - `uv sync`
-   - `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`
-3. Create a focused branch.
-4. Add or update tests when behavior changes.
-5. Run checks locally:
-   - `uv run pre-commit run --all-files`
-   - `uv run pre-commit run --hook-stage pre-push --all-files`
-6. Open a pull request with a concise description.
+| Symptom | Cause and fix |
+|---|---|
+| `invalid TELEGRAM_API_ID '...'` at start-up | The value is missing or not an integer. Use the numeric `api_id`, not the hash. |
+| `invalid MCP_TRANSPORT '...'` | One of `stdio`, `http`, `sse` only. |
+| `invalid TELEGRAM_EXPOSED_TOOLS ...` | Use `all`, `read-only`, or `read-only+name,name` with real tool names. |
+| Start-up exits immediately with a lock timeout | Another process holds the session. Wait, or set `TELEGRAM_SESSION_LOCK=shared`. |
+| `TELEGRAM_WHISPER_BASE_URL is not configured...` | `engine=whisper` needs an OpenAI-compatible endpoint; see [Known Gaps](#known-gaps). |
+| `GROQ_API_KEY is not configured...` | Set the key or switch `TELEGRAM_TRANSCRIBE_ENGINE`. |
+| Every tool answers "not connected" | The session boot is not wired yet; see [Known Gaps](#known-gaps). |
+| File tools deny every path | Roots are not configured (or not installed yet); see [Known Gaps](#known-gaps). |
+| Clients time out against the HTTP endpoint | The server binds `127.0.0.1` by default; set `MCP_HOST=0.0.0.0` inside a container. |
 
 ## License
 
-This project is licensed under the [Apache 2.0 License](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
 
-## Acknowledgements
-
-- [Telethon](https://github.com/LonamiWebs/Telethon)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
-- [Claude](https://www.anthropic.com/) and [Cursor](https://cursor.so/)
-- [chigwell/telegram-mcp](https://github.com/chigwell/telegram-mcp) upstream project
-
-Maintained by [@chigwell](https://github.com/chigwell) and [@l1v0n1](https://github.com/l1v0n1). PRs welcome.
-
-## Star History
-
-[![Star History Chart](https://star-history.dera.page/svg?repos=chigwell/telegram-mcp&type=Date)](https://star-history.dera.page/#chigwell/telegram-mcp&Date)
-
-## Contributors
-
-<a href="https://github.com/chigwell/telegram-mcp/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=chigwell/telegram-mcp" />
-</a>
+Portions of the behavior implemented here originate from the Telegram MTProto ecosystem; Telegram itself is not affiliated with this project.

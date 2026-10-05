@@ -1,0 +1,57 @@
+# =============================================================================
+# Docker build context for the Go port: ship only what `go build` needs.
+# =============================================================================
+
+# --- Go build outputs and local caches ---------------------------------------
+/telegram-mcp-go
+/out/
+*.exe
+*.test
+*.out
+coverage.txt
+GOCACHE
+GOMODCACHE
+
+# --- Runtime state that must never be baked into an image --------------------
+data/
+/telegram_sessions/
+transcript_cache/
+*.session
+*.session-journal
+mcp_errors.log
+.env
+
+# --- Superseded port sources and packaging (kept in the tree, unused by go build)
+/__pycache__/
+*.py
+*.pyc
+*.pyo
+*.pyd
+__init__.py
+main.py
+sanitize.py
+session_string_generator.py
+migrate_session.py
+telegram_mcp/
+tests/
+skills/
+requirements.txt
+pyproject.toml
+uv.lock
+poetry.lock
+.mcpbignore
+manifest.json
+claude_desktop_config.json
+.pre-commit-config.yaml
+.screenshots/
+
+# --- VCS, tooling, and agent scratch ----------------------------------------
+.git/
+.github/
+.gitignore
+.omo/
+.senpi/
+*.log
+README.md
+AGENTS.md
+LICENSE

@@ -1,0 +1,665 @@
+{
+  "total": 132,
+  "tools": [
+    {
+      "name": "add_chat_to_folder",
+      "module": "folders",
+      "readonly": false
+    },
+    {
+      "name": "add_contact",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "archive_chat",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "ban_user",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "block_user",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "clear_draft",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "create_channel",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "create_folder",
+      "module": "folders",
+      "readonly": false
+    },
+    {
+      "name": "create_forum_topic",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "create_group",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "create_poll",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "delete_chat_history",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "delete_chat_photo",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "delete_contact",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "delete_contact_alias",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "delete_folder",
+      "module": "folders",
+      "readonly": false
+    },
+    {
+      "name": "delete_forum_topic",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "delete_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "delete_messages_bulk",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "delete_profile_photo",
+      "module": "profile",
+      "readonly": false
+    },
+    {
+      "name": "delete_scheduled_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "demote_admin",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "disable_incoming_feed",
+      "module": "events",
+      "readonly": false
+    },
+    {
+      "name": "download_media",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "edit_admin_rights",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "edit_chat_about",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "edit_chat_photo",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "edit_chat_title",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "edit_forum_topic",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "edit_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "enable_forum_topics",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "enable_incoming_feed",
+      "module": "events",
+      "readonly": false
+    },
+    {
+      "name": "export_chat_invite",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "export_contacts",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "export_unread_messages",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "forward_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "forward_messages",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "get_admins",
+      "module": "groups",
+      "readonly": true
+    },
+    {
+      "name": "get_banned_users",
+      "module": "groups",
+      "readonly": true
+    },
+    {
+      "name": "get_blocked_users",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "get_bot_info",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "get_chat",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_chats",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_common_chats",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_contact_chats",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "get_contact_ids",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "get_direct_chat_by_contact",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "get_drafts",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_folder",
+      "module": "folders",
+      "readonly": true
+    },
+    {
+      "name": "get_full_chat",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_full_user",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "get_gif_search",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "get_history",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_invite_link",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "get_last_interaction",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "get_me",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "get_media_info",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "get_member_admin_status",
+      "module": "groups",
+      "readonly": true
+    },
+    {
+      "name": "get_message_context",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_message_link",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_message_reactions",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_message_read_by",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "get_messages",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_participants",
+      "module": "groups",
+      "readonly": true
+    },
+    {
+      "name": "get_photo_sheet",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "get_pinned_messages",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_privacy_settings",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "get_recent_actions",
+      "module": "groups",
+      "readonly": true
+    },
+    {
+      "name": "get_scheduled_messages",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_send_as",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "get_sticker_sets",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "get_user_photos",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "get_user_status",
+      "module": "profile",
+      "readonly": true
+    },
+    {
+      "name": "import_chat_invite",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "import_contacts",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "incoming_feed_status",
+      "module": "events",
+      "readonly": true
+    },
+    {
+      "name": "invite_to_group",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "join_chat_by_link",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "leave_chat",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "list_accounts",
+      "module": "accounts",
+      "readonly": true
+    },
+    {
+      "name": "list_chats",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "list_contact_aliases",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "list_contacts",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "list_folders",
+      "module": "folders",
+      "readonly": true
+    },
+    {
+      "name": "list_inline_buttons",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "list_messages",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "list_photos",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "list_topics",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "mark_as_read",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "mute_chat",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "open_photo",
+      "module": "media",
+      "readonly": true
+    },
+    {
+      "name": "pin_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "press_inline_button",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "promote_admin",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "remove_chat_from_folder",
+      "module": "folders",
+      "readonly": false
+    },
+    {
+      "name": "remove_reaction",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "remove_user",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "reorder_folders",
+      "module": "folders",
+      "readonly": false
+    },
+    {
+      "name": "reply_to_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "resolve_username",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "save_draft",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "search_contacts",
+      "module": "contacts",
+      "readonly": true
+    },
+    {
+      "name": "search_global",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "search_messages",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "search_public_chats",
+      "module": "chats",
+      "readonly": true
+    },
+    {
+      "name": "send_album",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "send_contact",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "send_file",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "send_gif",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "send_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "send_reaction",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "send_scheduled_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "send_sticker",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "send_voice",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "set_bot_commands",
+      "module": "profile",
+      "readonly": false
+    },
+    {
+      "name": "set_contact_alias",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "set_default_chat_permissions",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "set_privacy_settings",
+      "module": "profile",
+      "readonly": false
+    },
+    {
+      "name": "set_profile_photo",
+      "module": "profile",
+      "readonly": false
+    },
+    {
+      "name": "subscribe_public_channel",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "toggle_slow_mode",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "transcribe_voice",
+      "module": "messages",
+      "readonly": true
+    },
+    {
+      "name": "unarchive_chat",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "unban_user",
+      "module": "groups",
+      "readonly": false
+    },
+    {
+      "name": "unblock_user",
+      "module": "contacts",
+      "readonly": false
+    },
+    {
+      "name": "unmute_chat",
+      "module": "chats",
+      "readonly": false
+    },
+    {
+      "name": "unpin_all_messages",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "unpin_message",
+      "module": "messages",
+      "readonly": false
+    },
+    {
+      "name": "update_profile",
+      "module": "profile",
+      "readonly": false
+    },
+    {
+      "name": "upload_file",
+      "module": "media",
+      "readonly": false
+    },
+    {
+      "name": "wait_for_new_message",
+      "module": "events",
+      "readonly": true
+    },
+    {
+      "name": "wait_for_settled_message",
+      "module": "events",
+      "readonly": true
+    }
+  ]
+}
